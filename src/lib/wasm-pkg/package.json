@@ -1,0 +1,15 @@
+{
+  "name": "wasm-bruteforcer",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "wasm_bruteforcer_bg.wasm",
+    "wasm_bruteforcer.js",
+    "wasm_bruteforcer.d.ts"
+  ],
+  "main": "wasm_bruteforcer.js",
+  "types": "wasm_bruteforcer.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

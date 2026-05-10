@@ -1,4 +1,4 @@
-import init, { find_matches } from '../wasm-pkg/wasm_bruteforcer';
+import init, { find_matches } from '../lib/wasm-pkg/wasm_bruteforcer';
 
 self.onmessage = async (e: MessageEvent) => {
     const { targetPattern, targetH, targetS, targetL, startId, endId, wasmUrl } = e.data;
