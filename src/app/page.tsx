@@ -31,31 +31,100 @@ export default function Home() {
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
   const [predictId, setPredictId] = useState<string>('');
   const [predictedData, setPredictedData] = useState<IdenticonData | null>(null);
-  
+  const [colorTolerance, setColorTolerance] = useState(0.03);
+  const [apiError, setApiError] = useState<string | null>(null);
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const workersRef = useRef<Worker[]>([]);
 
-  const handlePredict = (id: string) => {
-    setPredictId(id);
-    if (!id || isNaN(parseInt(id))) {
-      setPredictedData(null);
-      return;
-    }
+  const testPatternMatch = async () => {
+    const testId = 1;
+    const testIdStr = testId.toString();
 
-    const hash = CryptoJS.MD5(id).toString();
+    console.log(`[Test] ========== Testing ID ${testId} ==========`);
+    console.log(`[Test] Input string: "${testIdStr}"`);
+
+    // Calculate hash
+    const hash = CryptoJS.MD5(testIdStr).toString();
+    console.log(`[Test] MD5 hash: ${hash}`);
+    console.log(`[Test] Expected:  c4ca4238a0b923820dcc509a6f75849b`);
+    console.log(`[Test] Match: ${hash === 'c4ca4238a0b923820dcc509a6f75849b' ? '✅' : '❌'}`);
+
+    // Extract bytes
     const bytes = [];
     for (let c = 0; c < hash.length; c += 2) {
       bytes.push(parseInt(hash.substr(c, 2), 16));
     }
+    console.log(`[Test] First 8 bytes:`, bytes.slice(0, 8).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
 
+    // Calculate pattern
     let pattern = 0;
+    const nibbles = [];
     for (let i = 0; i < 15; i++) {
       const byteIdx = Math.floor(i / 2);
       const byte = bytes[byteIdx];
       const nibble = i % 2 === 0 ? (byte >> 4) & 0x0f : byte & 0x0f;
+      nibbles.push(nibble);
       if (nibble % 2 === 0) pattern |= (1 << i);
     }
+    console.log(`[Test] Nibbles:`, nibbles.map(n => n.toString(16)).join(' '));
+    console.log(`[Test] Pattern: ${pattern} (binary: ${pattern.toString(2).padStart(15, '0')}, hex: 0x${pattern.toString(16)})`);
+    console.log(`[Test] Expected pattern: 21439 (binary: 101001110111111, hex: 0x53bf)`);
+    console.log(`[Test] Pattern match: ${pattern === 21439 ? '✅' : '❌'}`);
+
+    // Test with WASM
+    console.log(`[Test] Now testing with WASM...`);
+    const worker = new Worker(new URL('../workers/bruteforce.ts', import.meta.url));
+    worker.onmessage = (e) => {
+      if (e.data.type === 'SUCCESS') {
+        console.log(`[Test] WASM returned ${e.data.matches.length} matches:`, Array.from(e.data.matches));
+        if (e.data.matches.includes(testId)) {
+          console.log(`[Test] ✅ SUCCESS! WASM found ID ${testId}`);
+        } else {
+          console.log(`[Test] ❌ FAILED! WASM did not find ID ${testId}`);
+          console.log(`[Test] This means the WASM is calculating a different pattern for ID ${testId}`);
+        }
+      } else if (e.data.type === 'ERROR') {
+        console.error(`[Test] ❌ WASM Error:`, e.data.error);
+      }
+      worker.terminate();
+    };
+    worker.postMessage({
+      targetPattern: pattern,
+      startId: testId,
+      endId: testId,
+      wasmUrl: '/wasm/wasm_bruteforcer_bg.wasm'
+    });
+  };
+
+  const handlePredict = (id: string) => {
+    setPredictId(id);
+    const trimmedId = id.trim();
+    if (!trimmedId || isNaN(parseInt(trimmedId))) {
+      setPredictedData(null);
+      return;
+    }
+
+    const hash = CryptoJS.MD5(trimmedId).toString();
+    console.log(`[Predict] ID: "${trimmedId}", MD5: ${hash}`);
+    const bytes = [];
+    for (let c = 0; c < hash.length; c += 2) {
+      bytes.push(parseInt(hash.substr(c, 2), 16));
+    }
+    console.log(`[Predict] First 8 bytes:`, bytes.slice(0, 8).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
+
+    let pattern = 0;
+    const nibbles = [];
+    for (let i = 0; i < 15; i++) {
+      const byteIdx = Math.floor(i / 2);
+      const byte = bytes[byteIdx];
+      const nibble = i % 2 === 0 ? (byte >> 4) & 0x0f : byte & 0x0f;
+      nibbles.push(nibble);
+      if (nibble % 2 === 0) pattern |= (1 << i);
+    }
+    console.log(`[Predict] Nibbles:`, nibbles.map(n => n.toString(16)).join(' '));
+    console.log(`[Predict] Pattern: ${pattern} (binary: ${pattern.toString(2).padStart(15, '0')}), hex: 0x${pattern.toString(16)}`);
 
     const h1 = (bytes[12] & 0x0f) << 8;
     const h2 = bytes[13];
@@ -216,19 +285,38 @@ export default function Home() {
     
     const sorted = [...rankedIds].sort((a,b) => a.distance - b.distance);
     console.log("[Scan] Top 5 closest matches:", sorted.slice(0, 5));
-    
-    const filtered = sorted.filter(item => item.distance < 0.5);
+
+    const filtered = sorted.filter(item => item.distance < colorTolerance);
     const sortedIds = filtered.map(item => item.id).slice(0, 50);
     setMatches(sortedIds);
-    
+    console.log(`[Scan] After color filtering (tolerance ${colorTolerance}): ${sortedIds.length} matches`);
+
     if (sortedIds.length > 0) {
       confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: ['#00f2ff', '#7000ff', '#ffffff'] });
+      setApiError(null);
+      let successCount = 0;
+      let errorCount = 0;
       const userData = await Promise.all(sortedIds.map(async (id) => {
         try {
           const res = await fetch(`https://api.github.com/user/${id}`);
-          return res.ok ? res.json() : null;
-        } catch (e) { return null; }
+          if (res.ok) {
+            successCount++;
+            return res.json();
+          } else if (res.status === 403) {
+            errorCount++;
+            return null;
+          }
+          return null;
+        } catch (e) {
+          errorCount++;
+          return null;
+        }
       }));
+
+      if (errorCount > 0) {
+        setApiError(`GitHub API限速：成功${successCount}个，失败${errorCount}个。匹配的ID: ${sortedIds.slice(0, 10).join(', ')}${sortedIds.length > 10 ? '...' : ''}`);
+      }
+
       setUsers(userData.filter(u => u !== null));
     }
   };
@@ -239,7 +327,10 @@ export default function Home() {
       <div className="fixed inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.05] dark:opacity-20 pointer-events-none" />
 
       <div className="relative z-10 mx-auto max-w-6xl px-6 py-12 md:py-24">
-        <div className="absolute right-6 top-6">
+        <div className="absolute right-6 top-6 flex gap-2">
+          <button onClick={testPatternMatch} className="flex h-12 px-4 items-center justify-center rounded-2xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-white/5 text-slate-900 dark:text-white backdrop-blur-md transition-all hover:scale-110 active:scale-95 text-xs font-bold">
+            TEST
+          </button>
           <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="flex h-12 w-12 items-center justify-center rounded-2xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-white/5 text-slate-900 dark:text-white backdrop-blur-md transition-all hover:scale-110 active:scale-95">
             {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
           </button>
@@ -324,6 +415,17 @@ export default function Home() {
                     <input type="range" min="0" max="255" value={targetData.s} onChange={(e) => setTargetData({...targetData, s: parseInt(e.target.value)})} className="w-full h-1 bg-slate-200 dark:bg-white/10 rounded-lg appearance-none cursor-pointer accent-cyan-500" />
                     <input type="range" min="0" max="255" value={targetData.l} onChange={(e) => setTargetData({...targetData, l: parseInt(e.target.value)})} className="w-full h-1 bg-slate-200 dark:bg-white/10 rounded-lg appearance-none cursor-pointer accent-cyan-500" />
                   </div>
+                  <div className="pt-2 border-t border-black/5 dark:border-white/5">
+                    <div className="flex items-center justify-between text-xs text-slate-500 dark:text-white/40 mb-2">
+                      <span>颜色容差</span>
+                      <span className="font-mono">{colorTolerance.toFixed(2)}</span>
+                    </div>
+                    <input type="range" min="0.01" max="0.5" step="0.01" value={colorTolerance} onChange={(e) => setColorTolerance(parseFloat(e.target.value))} className="w-full h-1 bg-slate-200 dark:bg-white/10 rounded-lg appearance-none cursor-pointer accent-violet-500" />
+                    <div className="flex justify-between text-xs text-slate-400 dark:text-white/30 mt-1">
+                      <span>严格</span>
+                      <span>宽松</span>
+                    </div>
+                  </div>
                 </div>
                 <button disabled={scanning} onClick={startScan} className="mt-8 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 dark:bg-white py-3 font-bold text-white dark:text-black transition-transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50">
                   {scanning ? <><Search className="animate-spin" size={18} />Scanning {progress}%...</> : <><Cpu size={18} />Brute Force IDs</>}
@@ -334,6 +436,11 @@ export default function Home() {
 
           <section className="space-y-6">
             <h2 className="flex items-center gap-2 text-xl font-bold text-slate-900 dark:text-white"><Users size={20} /> Results {matches.length > 0 && <span className="ml-2 text-sm font-normal text-cyan-600 dark:text-cyan-400">{matches.length} matches</span>}</h2>
+            {apiError && (
+              <div className="rounded-2xl border border-orange-500/20 bg-orange-500/10 p-4 backdrop-blur-md">
+                <p className="text-sm text-orange-600 dark:text-orange-400">{apiError}</p>
+              </div>
+            )}
             <div className="min-h-[400px] rounded-3xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-white/5 p-2 backdrop-blur-md">
               <AnimatePresence mode="popLayout">
                 {scanning ? (
@@ -343,15 +450,8 @@ export default function Home() {
                     <div className="w-64 h-1.5 bg-black/5 dark:bg-white/5 rounded-full overflow-hidden"><motion.div className="h-full bg-cyan-500" initial={{ width: 0 }} animate={{ width: `${progress}%` }} /></div>
                   </motion.div>
                 ) : users.length > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 h-full">
-                    <div className="space-y-4">
-                      <h3 className="text-sm font-semibold text-slate-400 dark:text-white/40 mb-4 px-2 uppercase tracking-wider">Default Avatars</h3>
-                      <div className="space-y-4">{users.filter(u => u.avatar_url.includes('identicons')).map((user) => <UserCard key={user.id} user={user} type="default" />)}</div>
-                    </div>
-                    <div className="space-y-4">
-                      <h3 className="text-sm font-semibold text-slate-400 dark:text-white/40 mb-4 px-2 uppercase tracking-wider">Custom Avatars</h3>
-                      <div className="space-y-4">{users.filter(u => !u.avatar_url.includes('identicons')).map((user) => <UserCard key={user.id} user={user} type="custom" />)}</div>
-                    </div>
+                  <div className="space-y-4 p-4">
+                    <div className="space-y-4">{users.map((user) => <UserCard key={user.id} user={user} type="default" />)}</div>
                   </div>
                 ) : <div className="flex h-full flex-col items-center justify-center py-40 text-center space-y-4"><p className="text-slate-400 dark:text-white/40">{!image ? "Upload an image to start searching" : "No matches found yet."}</p></div>}
               </AnimatePresence>
