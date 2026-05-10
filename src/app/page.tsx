@@ -202,17 +202,26 @@ export default function Home() {
 
   const finalizeScan = async (foundIds: number[]) => {
     if (!targetData) return;
+    console.log(`[Scan] WASM found ${foundIds.length} shape matches.`);
     setScanning(false);
     
     workersRef.current.forEach(w => w.terminate());
     workersRef.current = [];
 
-    if (foundIds.length === 0) return;
+    if (foundIds.length === 0) {
+      console.warn("[Scan] No shape matches found in the entire range.");
+      return;
+    }
 
     // 1. Calculate color distance for all matches and sort
+    console.log("[Scan] Ranking matches by color similarity...");
     const rankedIds = foundIds.map(id => {
       const hash = CryptoJS.MD5(id.toString()).toString();
-      const bytes = Buffer.from(hash, 'hex');
+      // CryptoJS returns a hex string, we need to extract bytes manually
+      const bytes = [];
+      for (let c = 0; c < hash.length; c += 2) {
+          bytes.push(parseInt(hash.substr(c, 2), 16));
+      }
       
       const h1 = (bytes[12] & 0x0f) << 8;
       const h2 = bytes[13];
@@ -220,22 +229,28 @@ export default function Home() {
       const s = bytes[14];
       const l = bytes[15];
 
-      // Euclidean distance in normalized 3D space (approximate)
+      // Euclidean distance in normalized 3D space
       const dh = Math.abs(h - targetData.h) / 4096;
       const ds = Math.abs(s - targetData.s) / 256;
       const dl = Math.abs(l - targetData.l) / 256;
       const distance = Math.sqrt(dh*dh + ds*ds + dl*dl);
 
-      return { id, distance };
-    })
-    .filter(item => item.distance < 0.3) // Tolerance: distance < 0.3 (approx 30% dev)
-    .sort((a, b) => a.distance - b.distance)
-    .slice(0, 20); // Limit to top 20 for API performance
+      return { id, distance, h, s, l };
+    });
 
-    const sortedIds = rankedIds.map(item => item.id);
+    console.log("[Scan] Sample of top matches (before filter):", rankedIds.sort((a,b) => a.distance - b.distance).slice(0, 5));
+
+    const filtered = rankedIds
+      .filter(item => item.distance < 0.5) // Increased tolerance to 50% for debugging
+      .sort((a, b) => a.distance - b.distance);
+
+    console.log(`[Scan] ${filtered.length} matches remain after color filtering.`);
+
+    const sortedIds = filtered.map(item => item.id).slice(0, 50);
     setMatches(sortedIds);
 
     if (sortedIds.length > 0) {
+      console.log("[Scan] Fetching user data for top matches...");
       confetti({
         particleCount: 150,
         spread: 70,
@@ -246,8 +261,13 @@ export default function Home() {
       // Fetch user data
       const userData = await Promise.all(
         sortedIds.map(async (id) => {
-          const res = await fetch(`https://api.github.com/user/${id}`);
-          return res.ok ? res.json() : null;
+          try {
+            const res = await fetch(`https://api.github.com/user/${id}`);
+            if (res.status === 403) console.error("GitHub API Rate Limit Hit!");
+            return res.ok ? res.json() : null;
+          } catch (e) {
+            return null;
+          }
         })
       );
       setUsers(userData.filter(u => u !== null));
