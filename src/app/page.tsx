@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, Search, Users, Shield, Cpu, RefreshCcw, LayoutGrid } from 'lucide-react';
+import { Upload, Search, Users, Shield, Cpu, RefreshCcw, LayoutGrid, Sun, Moon } from 'lucide-react';
 import { UserCard } from '@/components/UserCard';
 import { findBestHslMatch, IdenticonData } from '@/lib/utils/image';
 import confetti from 'canvas-confetti';
@@ -27,10 +27,21 @@ export default function Home() {
   const [maxId, setMaxId] = useState(MAX_ID_FALLBACK);
   const [matches, setMatches] = useState<number[]>([]);
   const [users, setUsers] = useState<GitHubUser[]>([]);
+  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const workersRef = useRef<Worker[]>([]);
+
+  // Theme Management
+  useEffect(() => {
+    const root = window.document.documentElement;
+    if (theme === 'dark') {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+    }
+  }, [theme]);
 
   // 1. Fetch Max ID
   useEffect(() => {
@@ -214,12 +225,22 @@ export default function Home() {
       <div className="fixed inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.05] dark:opacity-20 pointer-events-none" />
 
       <div className="relative z-10 mx-auto max-w-6xl px-6 py-12 md:py-24">
+        {/* Theme Toggle */}
+        <div className="absolute right-6 top-6">
+          <button
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            className="flex h-12 w-12 items-center justify-center rounded-2xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-white/5 text-slate-900 dark:text-white backdrop-blur-md transition-all hover:scale-110 active:scale-95"
+          >
+            {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+          </button>
+        </div>
+
         {/* Header */}
         <header className="mb-16 text-center">
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="inline-flex items-center gap-2 rounded-full border border-black/5 dark:border-white/10 bg-black/5 dark:bg-white/5 px-4 py-1.5 text-sm font-medium text-cyan-600 dark:text-cyan-400 backdrop-blur-md"
+            className="inline-flex items-center gap-2 rounded-full border border-black/10 dark:border-white/10 bg-white/50 dark:bg-white/5 px-4 py-1.5 text-sm font-medium text-cyan-600 dark:text-cyan-400 backdrop-blur-md"
           >
             <Shield size={14} /> GitHub Identicon Decoder
           </motion.div>
@@ -246,7 +267,9 @@ export default function Home() {
           <section className="space-y-8">
             <div 
               className={`group relative aspect-square cursor-pointer overflow-hidden rounded-3xl border-2 border-dashed transition-all ${
-                image ? 'border-white/20' : 'border-white/10 hover:border-cyan-500/50 hover:bg-white/5'
+                image 
+                  ? 'border-slate-200 dark:border-white/20' 
+                  : 'border-slate-300 dark:border-white/10 hover:border-cyan-500/50 hover:bg-slate-50 dark:hover:bg-white/5'
               }`}
               onClick={() => fileInputRef.current?.click()}
             >
@@ -267,12 +290,12 @@ export default function Home() {
                 </div>
               ) : (
                 <div className="flex h-full flex-col items-center justify-center space-y-4">
-                  <div className="rounded-full bg-white/5 p-4 group-hover:scale-110 transition-transform">
-                    <Upload className="text-white/40" size={32} />
+                  <div className="rounded-full bg-slate-100 dark:bg-white/5 p-4 group-hover:scale-110 transition-transform">
+                    <Upload className="text-slate-400 dark:text-white/40" size={32} />
                   </div>
                   <div className="text-center">
-                    <p className="font-medium">Drop screenshot here</p>
-                    <p className="text-sm text-white/40">or click to browse</p>
+                    <p className="font-medium text-slate-900 dark:text-white">Drop screenshot here</p>
+                    <p className="text-sm text-slate-400 dark:text-white/40">or click to browse</p>
                   </div>
                 </div>
               )}
@@ -282,14 +305,14 @@ export default function Home() {
               <motion.div 
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-md"
+                className="rounded-2xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-white/5 p-6 backdrop-blur-md"
               >
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="flex items-center gap-2 font-semibold">
+                  <h3 className="flex items-center gap-2 font-semibold text-slate-900 dark:text-white">
                     <LayoutGrid size={18} /> Extracted Pattern
                   </h3>
                   <div 
-                    className="h-6 w-12 rounded-full border border-white/20"
+                    className="h-6 w-12 rounded-full border border-black/10 dark:border-white/20"
                     style={{ backgroundColor: `hsl(${targetData.h * 360 / 4095}, ${65 - (targetData.s * 20 / 255)}%, ${75 - (targetData.l * 20 / 255)}%)` }}
                   />
                 </div>
@@ -306,7 +329,7 @@ export default function Home() {
                       <div 
                         key={i}
                         className={`rounded-sm transition-colors duration-500 ${
-                          isActive ? 'bg-cyan-500' : 'bg-white/5'
+                          isActive ? 'bg-cyan-500' : 'bg-slate-100 dark:bg-white/5'
                         }`}
                       />
                     );
@@ -316,7 +339,7 @@ export default function Home() {
                 <button
                   disabled={scanning}
                   onClick={startScan}
-                  className="mt-8 flex w-full items-center justify-center gap-2 rounded-xl bg-white py-3 font-bold text-black transition-transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+                  className="mt-8 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 dark:bg-white py-3 font-bold text-white dark:text-black transition-transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
                 >
                   {scanning ? (
                     <>
@@ -337,13 +360,13 @@ export default function Home() {
           {/* Results Section */}
           <section className="space-y-6">
             <div className="flex items-center justify-between">
-              <h2 className="flex items-center gap-2 text-xl font-bold">
+              <h2 className="flex items-center gap-2 text-xl font-bold text-slate-900 dark:text-white">
                 <Users size={20} /> Results
-                {matches.length > 0 && <span className="ml-2 text-sm font-normal text-cyan-400">{matches.length} matches found</span>}
+                {matches.length > 0 && <span className="ml-2 text-sm font-normal text-cyan-600 dark:text-cyan-400">{matches.length} matches found</span>}
               </h2>
             </div>
 
-            <div className="min-h-[400px] rounded-3xl border border-white/10 bg-white/5 p-2 backdrop-blur-md">
+            <div className="min-h-[400px] rounded-3xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-white/5 p-2 backdrop-blur-md">
               <AnimatePresence mode="popLayout">
                 {scanning ? (
                   <motion.div 
@@ -357,10 +380,10 @@ export default function Home() {
                       <Search className="absolute inset-0 m-auto text-cyan-500" size={32} />
                     </div>
                     <div className="text-center">
-                      <p className="text-lg font-medium">Scanning {maxId.toLocaleString()} IDs</p>
-                      <p className="text-sm text-white/40">Leveraging multi-core WASM acceleration</p>
+                      <p className="text-lg font-medium text-slate-900 dark:text-white">Scanning {maxId.toLocaleString()} IDs</p>
+                      <p className="text-sm text-slate-500 dark:text-white/40">Leveraging multi-core WASM acceleration</p>
                     </div>
-                    <div className="w-64 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                    <div className="w-64 h-1.5 bg-black/5 dark:bg-white/5 rounded-full overflow-hidden">
                       <motion.div 
                         className="h-full bg-cyan-500"
                         initial={{ width: 0 }}
@@ -371,7 +394,7 @@ export default function Home() {
                 ) : users.length > 0 ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 h-full">
                     <div className="space-y-4">
-                      <h3 className="flex items-center gap-2 text-sm font-semibold text-white/40 mb-4 px-2 uppercase tracking-wider">
+                      <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-400 dark:text-white/40 mb-4 px-2 uppercase tracking-wider">
                         Default Avatars
                       </h3>
                       <div className="space-y-4">
@@ -379,13 +402,13 @@ export default function Home() {
                           <UserCard key={user.id} user={user} type="default" />
                         ))}
                         {users.filter(u => u.avatar_url.includes('identicons')).length === 0 && (
-                          <p className="text-sm text-white/20 text-center py-8 italic">None found</p>
+                          <p className="text-sm text-slate-400 dark:text-white/20 text-center py-8 italic">None found</p>
                         )}
                       </div>
                     </div>
                     
                     <div className="space-y-4">
-                      <h3 className="flex items-center gap-2 text-sm font-semibold text-white/40 mb-4 px-2 uppercase tracking-wider">
+                      <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-400 dark:text-white/40 mb-4 px-2 uppercase tracking-wider">
                         Custom Avatars
                       </h3>
                       <div className="space-y-4">
@@ -393,21 +416,21 @@ export default function Home() {
                           <UserCard key={user.id} user={user} type="custom" />
                         ))}
                         {users.filter(u => !u.avatar_url.includes('identicons')).length === 0 && (
-                          <p className="text-sm text-white/20 text-center py-8 italic">None found</p>
+                          <p className="text-sm text-slate-400 dark:text-white/20 text-center py-8 italic">None found</p>
                         )}
                       </div>
                     </div>
                   </div>
                 ) : !image ? (
                   <div className="flex h-full flex-col items-center justify-center py-40 text-center space-y-4">
-                    <div className="rounded-full bg-white/5 p-4 text-white/20">
+                    <div className="rounded-full bg-slate-100 dark:bg-white/5 p-4 text-slate-300 dark:text-white/20">
                       <Upload size={32} />
                     </div>
-                    <p className="text-white/40">Upload an image to start searching</p>
+                    <p className="text-slate-400 dark:text-white/40">Upload an image to start searching</p>
                   </div>
                 ) : (
                   <div className="flex h-full flex-col items-center justify-center py-40 text-center space-y-4">
-                    <p className="text-white/40">No matches found yet.</p>
+                    <p className="text-slate-400 dark:text-white/40">No matches found yet.</p>
                   </div>
                 )}
               </AnimatePresence>
