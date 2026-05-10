@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, Search, Users, Shield, Cpu, RefreshCcw, LayoutGrid, Sun, Moon, Hash } from 'lucide-react';
+import { Upload, Search, Users, Shield, Cpu, RefreshCcw, LayoutGrid, Sun, Moon, Hash, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Pipette } from 'lucide-react';
 import { UserCard } from '@/components/UserCard';
 import { findBestHslMatch, IdenticonData } from '@/lib/utils/image';
 import confetti from 'canvas-confetti';
@@ -33,70 +33,13 @@ export default function Home() {
   const [predictedData, setPredictedData] = useState<IdenticonData | null>(null);
   const [colorTolerance, setColorTolerance] = useState(0.03);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [showNonDefault, setShowNonDefault] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const resultsPerPage = 10;
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const workersRef = useRef<Worker[]>([]);
-
-  const testPatternMatch = async () => {
-    const testId = 1;
-    const testIdStr = testId.toString();
-
-    console.log(`[Test] ========== Testing ID ${testId} ==========`);
-    console.log(`[Test] Input string: "${testIdStr}"`);
-
-    // Calculate hash
-    const hash = CryptoJS.MD5(testIdStr).toString();
-    console.log(`[Test] MD5 hash: ${hash}`);
-    console.log(`[Test] Expected:  c4ca4238a0b923820dcc509a6f75849b`);
-    console.log(`[Test] Match: ${hash === 'c4ca4238a0b923820dcc509a6f75849b' ? '✅' : '❌'}`);
-
-    // Extract bytes
-    const bytes = [];
-    for (let c = 0; c < hash.length; c += 2) {
-      bytes.push(parseInt(hash.substr(c, 2), 16));
-    }
-    console.log(`[Test] First 8 bytes:`, bytes.slice(0, 8).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
-
-    // Calculate pattern
-    let pattern = 0;
-    const nibbles = [];
-    for (let i = 0; i < 15; i++) {
-      const byteIdx = Math.floor(i / 2);
-      const byte = bytes[byteIdx];
-      const nibble = i % 2 === 0 ? (byte >> 4) & 0x0f : byte & 0x0f;
-      nibbles.push(nibble);
-      if (nibble % 2 === 0) pattern |= (1 << i);
-    }
-    console.log(`[Test] Nibbles:`, nibbles.map(n => n.toString(16)).join(' '));
-    console.log(`[Test] Pattern: ${pattern} (binary: ${pattern.toString(2).padStart(15, '0')}, hex: 0x${pattern.toString(16)})`);
-    console.log(`[Test] Expected pattern: 21439 (binary: 101001110111111, hex: 0x53bf)`);
-    console.log(`[Test] Pattern match: ${pattern === 21439 ? '✅' : '❌'}`);
-
-    // Test with WASM
-    console.log(`[Test] Now testing with WASM...`);
-    const worker = new Worker(new URL('../workers/bruteforce.ts', import.meta.url));
-    worker.onmessage = (e) => {
-      if (e.data.type === 'SUCCESS') {
-        console.log(`[Test] WASM returned ${e.data.matches.length} matches:`, Array.from(e.data.matches));
-        if (e.data.matches.includes(testId)) {
-          console.log(`[Test] ✅ SUCCESS! WASM found ID ${testId}`);
-        } else {
-          console.log(`[Test] ❌ FAILED! WASM did not find ID ${testId}`);
-          console.log(`[Test] This means the WASM is calculating a different pattern for ID ${testId}`);
-        }
-      } else if (e.data.type === 'ERROR') {
-        console.error(`[Test] ❌ WASM Error:`, e.data.error);
-      }
-      worker.terminate();
-    };
-    worker.postMessage({
-      targetPattern: pattern,
-      startId: testId,
-      endId: testId,
-      wasmUrl: '/wasm/wasm_bruteforcer_bg.wasm'
-    });
-  };
 
   const handlePredict = (id: string) => {
     setPredictId(id);
@@ -107,24 +50,18 @@ export default function Home() {
     }
 
     const hash = CryptoJS.MD5(trimmedId).toString();
-    console.log(`[Predict] ID: "${trimmedId}", MD5: ${hash}`);
     const bytes = [];
     for (let c = 0; c < hash.length; c += 2) {
       bytes.push(parseInt(hash.substr(c, 2), 16));
     }
-    console.log(`[Predict] First 8 bytes:`, bytes.slice(0, 8).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
 
     let pattern = 0;
-    const nibbles = [];
     for (let i = 0; i < 15; i++) {
       const byteIdx = Math.floor(i / 2);
       const byte = bytes[byteIdx];
       const nibble = i % 2 === 0 ? (byte >> 4) & 0x0f : byte & 0x0f;
-      nibbles.push(nibble);
       if (nibble % 2 === 0) pattern |= (1 << i);
     }
-    console.log(`[Predict] Nibbles:`, nibbles.map(n => n.toString(16)).join(' '));
-    console.log(`[Predict] Pattern: ${pattern} (binary: ${pattern.toString(2).padStart(15, '0')}), hex: 0x${pattern.toString(16)}`);
 
     const h1 = (bytes[12] & 0x0f) << 8;
     const h2 = bytes[13];
@@ -192,6 +129,33 @@ export default function Home() {
     img.src = src;
   };
 
+  const handleImageClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!image || !canvasRef.current) return;
+    
+    const rect = e.currentTarget.getBoundingClientRect();
+    const imgElement = e.currentTarget.querySelector('img');
+    if (!imgElement) return;
+
+    const imgRect = imgElement.getBoundingClientRect();
+    const scaleX = canvasRef.current.width / imgRect.width;
+    const scaleY = canvasRef.current.height / imgRect.height;
+    
+    const x = (e.clientX - imgRect.left) * scaleX;
+    const y = (e.clientY - imgRect.top) * scaleY;
+    
+    const ctx = canvasRef.current.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return;
+    
+    const pixel = ctx.getImageData(x, y, 1, 1).data;
+    const bestHsl = findBestHslMatch(pixel[0], pixel[1], pixel[2]);
+    
+    if (targetData) {
+      setTargetData({ ...targetData, ...bestHsl });
+    } else {
+      setTargetData({ pattern: 0, ...bestHsl });
+    }
+  };
+
   const detectIdenticon = (ctx: CanvasRenderingContext2D, w: number, h: number) => {
     const size = Math.min(w, h);
     const blockSize = size / 5;
@@ -230,6 +194,7 @@ export default function Home() {
     setProgress(0);
     setMatches([]);
     setUsers([]);
+    setCurrentPage(1);
     const numWorkers = navigator.hardwareConcurrency || 4;
     const chunkSize = Math.ceil(maxId / numWorkers);
     let completedWorkers = 0;
@@ -259,11 +224,10 @@ export default function Home() {
 
   const finalizeScan = async (foundIds: number[]) => {
     if (!targetData) return;
-    console.log(`[Scan] WASM found ${foundIds.length} shape matches.`);
     setScanning(false);
     workersRef.current.forEach(w => w.terminate());
     workersRef.current = [];
-    if (foundIds.length === 0) { console.warn("[Scan] No shape matches found."); return; }
+    if (foundIds.length === 0) return;
     
     const rankedIds = foundIds.map(id => {
       const hash = CryptoJS.MD5(id.toString()).toString();
@@ -280,184 +244,260 @@ export default function Home() {
       const ds = Math.abs(s - targetData.s) / 256;
       const dl = Math.abs(l - targetData.l) / 256;
       const distance = Math.sqrt(dh*dh + ds*ds + dl*dl);
-      return { id, distance, h, s, l };
+      return { id, distance };
     });
     
     const sorted = [...rankedIds].sort((a,b) => a.distance - b.distance);
-    console.log("[Scan] Top 5 closest matches:", sorted.slice(0, 5));
-
     const filtered = sorted.filter(item => item.distance < colorTolerance);
     const sortedIds = filtered.map(item => item.id).slice(0, 50);
     setMatches(sortedIds);
-    console.log(`[Scan] After color filtering (tolerance ${colorTolerance}): ${sortedIds.length} matches`);
 
     if (sortedIds.length > 0) {
       confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: ['#00f2ff', '#7000ff', '#ffffff'] });
       setApiError(null);
-      let successCount = 0;
-      let errorCount = 0;
       const userData = await Promise.all(sortedIds.map(async (id) => {
         try {
           const res = await fetch(`https://api.github.com/user/${id}`);
-          if (res.ok) {
-            successCount++;
-            return res.json();
-          } else if (res.status === 403) {
-            errorCount++;
-            return null;
-          }
+          if (res.ok) return res.json();
           return null;
         } catch (e) {
-          errorCount++;
           return null;
         }
       }));
-
-      if (errorCount > 0) {
-        setApiError(`GitHub API限速：成功${successCount}个，失败${errorCount}个。匹配的ID: ${sortedIds.slice(0, 10).join(', ')}${sortedIds.length > 10 ? '...' : ''}`);
-      }
-
       setUsers(userData.filter(u => u !== null));
     }
   };
 
-  return (
-    <main className="min-h-screen bg-white dark:bg-black text-slate-900 dark:text-white selection:bg-cyan-500/30 transition-colors duration-500">
-      <div className="fixed inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(240,240,255,1),rgba(255,255,255,1))] dark:bg-[radial-gradient(circle_at_50%_50%,rgba(20,20,30,1),rgba(0,0,0,1))]" />
-      <div className="fixed inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.05] dark:opacity-20 pointer-events-none" />
+  const categorizedUsers = useMemo(() => {
+    if (!targetData) return { defaultUsers: [], nonDefaultUsers: [] };
+    const defaultUsers: GitHubUser[] = [];
+    const nonDefaultUsers: GitHubUser[] = [];
 
-      <div className="relative z-10 mx-auto max-w-6xl px-6 py-12 md:py-24">
+    users.forEach(user => {
+      const url = new URL(user.avatar_url);
+      const isDefaultStyle = !url.searchParams.has('u');
+      if (isDefaultStyle) {
+        defaultUsers.push(user);
+      } else {
+        nonDefaultUsers.push(user);
+      }
+    });
+
+    return { defaultUsers, nonDefaultUsers };
+  }, [users, targetData]);
+
+  const totalPages = Math.ceil(categorizedUsers.defaultUsers.length / resultsPerPage);
+  const currentDefaultUsers = categorizedUsers.defaultUsers.slice((currentPage - 1) * resultsPerPage, currentPage * resultsPerPage);
+
+  return (
+    <main className="min-h-screen bg-white dark:bg-black text-slate-900 dark:text-white selection:bg-cyan-500/30 transition-colors duration-500 pb-20">
+      <div className="fixed inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(240,240,255,1),rgba(255,255,255,1))] dark:bg-[radial-gradient(circle_at_50%_50%,rgba(15,15,25,1),rgba(0,0,0,1))]" />
+      <div className="fixed inset-0 opacity-[0.03] dark:opacity-[0.02]" style={{ backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, currentColor 10px, currentColor 11px)' }} />
+      
+      <div className="relative z-10 mx-auto max-w-6xl px-6 py-12">
         <div className="absolute right-6 top-6 flex gap-2">
-          <button onClick={testPatternMatch} className="flex h-12 px-4 items-center justify-center rounded-2xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-white/5 text-slate-900 dark:text-white backdrop-blur-md transition-all hover:scale-110 active:scale-95 text-xs font-bold">
-            TEST
-          </button>
-          <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="flex h-12 w-12 items-center justify-center rounded-2xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-white/5 text-slate-900 dark:text-white backdrop-blur-md transition-all hover:scale-110 active:scale-95">
-            {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+          <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="flex h-10 w-10 items-center justify-center rounded-xl border border-black/5 dark:border-white/5 bg-white/50 dark:bg-white/5 text-slate-900 dark:text-white backdrop-blur-md transition-all hover:scale-110 active:scale-95 shadow-lg">
+            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
           </button>
         </div>
 
-        <header className="mb-16 text-center">
-          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="inline-flex items-center gap-2 rounded-full border border-black/10 dark:border-white/10 bg-white/50 dark:bg-white/5 px-4 py-1.5 text-sm font-medium text-cyan-600 dark:text-cyan-400 backdrop-blur-md">
+        <header className="mb-12 text-center">
+          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="inline-flex items-center gap-2 rounded-full border border-black/5 dark:border-white/5 bg-white/50 dark:bg-white/5 px-4 py-1.5 text-xs font-extrabold uppercase tracking-wider text-cyan-600 dark:text-cyan-400 backdrop-blur-md mb-4">
             <Shield size={14} /> GitHub Identicon Decoder
           </motion.div>
-          <h1 className="mt-6 text-5xl font-bold tracking-tight md:text-7xl text-slate-900 dark:text-white">
-            Trace the <span className="bg-gradient-to-r from-cyan-600 to-violet-600 dark:from-cyan-400 dark:to-violet-500 bg-clip-text text-transparent">Invisible.</span>
+          <h1 className="text-4xl font-extrabold tracking-tighter md:text-6xl text-slate-900 dark:text-white mb-3">
+            Trace the <span className="bg-gradient-to-r from-cyan-600 to-violet-600 bg-clip-text text-transparent">Invisible.</span>
           </h1>
-          <p className="mx-auto mt-6 max-w-2xl text-lg text-slate-500 dark:text-white/50">
-            Upload a GitHub default avatar to brute-force the user ID using client-side WebAssembly.
-          </p>
+          <p className="text-base text-slate-500 dark:text-white/40 font-semibold">Decode any GitHub default avatar into its original user ID.</p>
         </header>
 
-        <div className="grid gap-12 lg:grid-cols-2">
-          <section className="space-y-8">
-            <div className="rounded-3xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-white/5 p-8 backdrop-blur-md">
-              <h2 className="flex items-center gap-2 text-xl font-bold text-slate-900 dark:text-white mb-6">
-                <Hash className="text-cyan-500" size={20} /> ID Predictor
-              </h2>
-              <div className="space-y-4">
-                <input type="text" placeholder="Enter GitHub ID (e.g. 1)" value={predictId} onChange={(e) => handlePredict(e.target.value)} className="w-full rounded-xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/20 px-4 py-3 text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none transition-all" />
-                {predictedData && (
-                  <div className="space-y-6 pt-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-slate-500 dark:text-white/40">Predicted Result</span>
-                      <button onClick={() => setTargetData(predictedData)} className="text-xs font-bold text-cyan-500 hover:text-cyan-400 transition-colors uppercase tracking-widest">Set as Target</button>
-                    </div>
-                    <div className="flex items-center gap-8 justify-center p-6 rounded-2xl bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5">
-                      <div className="grid grid-cols-5 gap-1 w-24">
-                        {Array.from({ length: 25 }).map((_, i) => {
-                          const row = Math.floor(i / 5);
-                          const col = i % 5;
-                          const displayCol = col > 2 ? 4 - col : col;
-                          const bitIndex = (2 - displayCol) * 5 + row;
-                          const isActive = (predictedData.pattern >> bitIndex) & 1;
-                          return <div key={i} className={`aspect-square rounded-sm ${isActive ? 'bg-cyan-500' : 'bg-black/10 dark:bg-white/10'}`} />;
-                        })}
-                      </div>
-                      <div className="h-24 w-24 rounded-2xl border border-black/10 dark:border-white/20 shadow-xl" style={{ backgroundColor: `hsl(${predictedData.h * 360 / 4095}, ${65 - (predictedData.s * 20 / 255)}%, ${75 - (predictedData.l * 20 / 255)}%)` }} />
+        <div className="grid gap-6 lg:grid-cols-2 mb-12">
+          {/* Top Left: Upload & Pattern */}
+          <section className="space-y-4">
+            <div className="relative group aspect-[4/3] rounded-[1.5rem] overflow-hidden border-2 border-dashed border-slate-300 dark:border-white/10 transition-all hover:border-cyan-500/50">
+              <input type="file" ref={fileInputRef} onChange={handleUpload} className="hidden" accept="image/*" />
+              
+              {!image ? (
+                <button onClick={() => fileInputRef.current?.click()} className="w-full h-full flex flex-col items-center justify-center space-y-3 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
+                  <div className="rounded-2xl bg-slate-100 dark:bg-white/5 p-4 shadow-inner"><Upload className="text-slate-400 dark:text-white/40" size={32} /></div>
+                  <div className="text-center"><p className="text-base font-extrabold text-slate-900 dark:text-white">Upload Identicon</p><p className="text-xs text-slate-400 dark:text-white/40 font-semibold">Drop screenshot or click to browse</p></div>
+                </button>
+              ) : (
+                <div className="relative h-full w-full bg-black/5 dark:bg-white/5 cursor-crosshair" onClick={handleImageClick}>
+                  <img src={image} className="max-h-full max-w-full object-contain mx-auto pointer-events-none" alt="Upload" />
+                  <div className="absolute top-4 left-4 flex gap-2">
+                    <div className="px-3 py-1.5 rounded-xl bg-black/60 backdrop-blur-xl text-white text-[10px] font-black flex items-center gap-1.5 shadow-2xl border border-white/10">
+                      <Pipette size={12} className="text-cyan-400" /> TAP TO PICK COLOR
                     </div>
                   </div>
-                )}
-              </div>
-            </div>
-
-            <div className={`group relative aspect-square cursor-pointer overflow-hidden rounded-3xl border-2 border-dashed transition-all ${image ? 'border-slate-200 dark:border-white/20' : 'border-slate-300 dark:border-white/10 hover:border-cyan-500/50 hover:bg-slate-50 dark:hover:bg-white/5'}`} onClick={() => fileInputRef.current?.click()}>
-              <input type="file" ref={fileInputRef} onChange={handleUpload} className="hidden" accept="image/*" />
-              {image ? (
-                <div className="relative h-full w-full"><img src={image} className="h-full w-full object-contain" alt="Upload" /><div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><RefreshCcw className="text-white" /></div></div>
-              ) : (
-                <div className="flex h-full flex-col items-center justify-center space-y-4">
-                  <div className="rounded-full bg-slate-100 dark:bg-white/5 p-4 group-hover:scale-110 transition-transform"><Upload className="text-slate-400 dark:text-white/40" size={32} /></div>
-                  <div className="text-center"><p className="font-medium text-slate-900 dark:text-white">Drop screenshot here</p><p className="text-sm text-slate-400 dark:text-white/40">or click to browse</p></div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
+                    className="absolute bottom-4 right-4 p-3 rounded-xl bg-white dark:bg-zinc-900 text-slate-900 dark:text-white shadow-2xl border border-black/5 dark:border-white/10 hover:scale-110 transition-transform active:scale-95 group/btn"
+                  >
+                    <RefreshCcw size={16} className="group-hover/btn:rotate-180 transition-transform duration-500" />
+                  </button>
                 </div>
               )}
             </div>
 
             {targetData && (
-              <div className="rounded-2xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-white/5 p-6 backdrop-blur-md">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="flex items-center gap-2 font-semibold text-slate-900 dark:text-white"><LayoutGrid size={18} /> Extracted Pattern</h3>
-                  <div className="h-6 w-12 rounded-full border border-black/10 dark:border-white/20" style={{ backgroundColor: `hsl(${targetData.h * 360 / 4095}, ${65 - (targetData.s * 20 / 255)}%, ${75 - (targetData.l * 20 / 255)}%)` }} />
+              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="rounded-[1.5rem] border border-black/5 dark:border-white/5 bg-white/50 dark:bg-white/5 p-5 backdrop-blur-md shadow-xl">
+                <div className="flex items-center justify-between mb-5">
+                  <h3 className="flex items-center gap-2 font-extrabold text-slate-900 dark:text-white text-base uppercase tracking-tight"><LayoutGrid size={18} className="text-cyan-500" /> Target Matrix</h3>
+                  <div className="h-8 w-16 rounded-xl border-2 border-white dark:border-zinc-800 shadow-xl" style={{ backgroundColor: `hsl(${targetData.h * 360 / 4095}, ${65 - (targetData.s * 20 / 255)}%, ${75 - (targetData.l * 20 / 255)}%)` }} />
                 </div>
-                <div className="grid grid-cols-5 gap-1 aspect-square w-32 mx-auto">
-                  {Array.from({ length: 25 }).map((_, i) => {
-                    const row = Math.floor(i / 5);
-                    const col = i % 5;
-                    const displayCol = col > 2 ? 4 - col : col;
-                    const bitIndex = (2 - displayCol) * 5 + row;
-                    const isActive = (targetData.pattern >> bitIndex) & 1;
-                    return <div key={i} onClick={() => setTargetData({ ...targetData, pattern: targetData.pattern ^ (1 << bitIndex) })} className={`rounded-sm cursor-pointer transition-colors duration-200 ${isActive ? 'bg-cyan-500 hover:bg-cyan-400' : 'bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10'}`} />;
-                  })}
-                </div>
-                <div className="mt-6 space-y-4">
-                  <div className="flex items-center justify-between text-xs text-slate-500 dark:text-white/40"><span>Hue: {targetData.h}</span><span>Sat: {targetData.s}</span><span>Lum: {targetData.l}</span></div>
-                  <div className="space-y-2">
-                    <input type="range" min="0" max="4095" value={targetData.h} onChange={(e) => setTargetData({...targetData, h: parseInt(e.target.value)})} className="w-full h-1 bg-slate-200 dark:bg-white/10 rounded-lg appearance-none cursor-pointer accent-cyan-500" />
-                    <input type="range" min="0" max="255" value={targetData.s} onChange={(e) => setTargetData({...targetData, s: parseInt(e.target.value)})} className="w-full h-1 bg-slate-200 dark:bg-white/10 rounded-lg appearance-none cursor-pointer accent-cyan-500" />
-                    <input type="range" min="0" max="255" value={targetData.l} onChange={(e) => setTargetData({...targetData, l: parseInt(e.target.value)})} className="w-full h-1 bg-slate-200 dark:bg-white/10 rounded-lg appearance-none cursor-pointer accent-cyan-500" />
+                <div className="flex gap-6 items-center">
+                  <div className="grid grid-cols-5 gap-1.5 w-32">
+                    {Array.from({ length: 25 }).map((_, i) => {
+                      const row = Math.floor(i / 5);
+                      const col = i % 5;
+                      const displayCol = col > 2 ? 4 - col : col;
+                      const bitIndex = (2 - displayCol) * 5 + row;
+                      const isActive = (targetData.pattern >> bitIndex) & 1;
+                      return <div key={i} onClick={() => setTargetData({ ...targetData, pattern: targetData.pattern ^ (1 << bitIndex) })} className={`aspect-square rounded-md cursor-pointer transition-all duration-300 ${isActive ? 'bg-cyan-500 shadow-[0_0_15px_rgba(6,182,212,0.6)]' : 'bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10'}`} />;
+                    })}
                   </div>
-                  <div className="pt-2 border-t border-black/5 dark:border-white/5">
-                    <div className="flex items-center justify-between text-xs text-slate-500 dark:text-white/40 mb-2">
-                      <span>颜色容差</span>
-                      <span className="font-mono">{colorTolerance.toFixed(2)}</span>
+                  <div className="flex-1 space-y-4">
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-white/40"><span>Match Precision</span><span>{colorTolerance.toFixed(3)}</span></div>
+                      <input type="range" min="0.001" max="0.1" step="0.001" value={colorTolerance} onChange={(e) => setColorTolerance(parseFloat(e.target.value))} className="w-full h-1.5 bg-slate-200 dark:bg-white/10 rounded-full appearance-none cursor-pointer accent-cyan-500" />
                     </div>
-                    <input type="range" min="0.01" max="0.5" step="0.01" value={colorTolerance} onChange={(e) => setColorTolerance(parseFloat(e.target.value))} className="w-full h-1 bg-slate-200 dark:bg-white/10 rounded-lg appearance-none cursor-pointer accent-violet-500" />
-                    <div className="flex justify-between text-xs text-slate-400 dark:text-white/30 mt-1">
-                      <span>严格</span>
-                      <span>宽松</span>
-                    </div>
+                    <button disabled={scanning} onClick={startScan} className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 dark:bg-white py-3 text-sm font-extrabold text-white dark:text-black transition-all hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 shadow-2xl shadow-cyan-500/10">
+                      {scanning ? <><Search className="animate-spin" size={16} />Brute Forcing...</> : <><Cpu size={16} />BRUTE FORCE ID</>}
+                    </button>
                   </div>
                 </div>
-                <button disabled={scanning} onClick={startScan} className="mt-8 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 dark:bg-white py-3 font-bold text-white dark:text-black transition-transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50">
-                  {scanning ? <><Search className="animate-spin" size={18} />Scanning {progress}%...</> : <><Cpu size={18} />Brute Force IDs</>}
-                </button>
-              </div>
+              </motion.div>
             )}
           </section>
 
-          <section className="space-y-6">
-            <h2 className="flex items-center gap-2 text-xl font-bold text-slate-900 dark:text-white"><Users size={20} /> Results {matches.length > 0 && <span className="ml-2 text-sm font-normal text-cyan-600 dark:text-cyan-400">{matches.length} matches</span>}</h2>
-            {apiError && (
-              <div className="rounded-2xl border border-orange-500/20 bg-orange-500/10 p-4 backdrop-blur-md">
-                <p className="text-sm text-orange-600 dark:text-orange-400">{apiError}</p>
+          {/* Top Right: ID Predictor */}
+          <section>
+            <div className="rounded-[1.5rem] border border-black/5 dark:border-white/5 bg-white/50 dark:bg-white/5 p-5 backdrop-blur-md shadow-xl">
+              <h2 className="flex items-center gap-2 text-base font-extrabold text-slate-900 dark:text-white mb-5 uppercase tracking-[0.2em]">
+                <Hash className="text-violet-500" size={18} /> ID Predictor
+              </h2>
+              <div className="space-y-5">
+                <div className="relative group">
+                  <input type="text" placeholder="Enter GitHub ID (e.g. 1)" value={predictId} onChange={(e) => handlePredict(e.target.value)} className="w-full rounded-xl border-2 border-black/5 dark:border-white/5 bg-white dark:bg-black/20 px-4 py-3 text-base font-bold text-slate-900 dark:text-white focus:border-violet-500 focus:outline-none transition-all placeholder:text-slate-400 dark:placeholder:text-white/20 shadow-inner" />
+                  <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-white/20 group-focus-within:text-violet-500 transition-colors" size={18} />
+                </div>
+                
+                <AnimatePresence>
+                  {predictedData ? (
+                    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} className="space-y-5 p-5 rounded-xl bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5 shadow-inner">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-white/40">Simulation Matrix</span>
+                        <button onClick={() => setTargetData(predictedData)} className="text-[10px] font-black text-violet-500 hover:text-white hover:bg-violet-500 transition-all uppercase tracking-widest bg-violet-500/10 px-3 py-1.5 rounded-lg">
+                          Use as Target
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-8 justify-center">
+                        <div className="grid grid-cols-5 gap-1.5 w-24">
+                          {Array.from({ length: 25 }).map((_, i) => {
+                            const row = Math.floor(i / 5);
+                            const col = i % 5;
+                            const displayCol = col > 2 ? 4 - col : col;
+                            const bitIndex = (2 - displayCol) * 5 + row;
+                            const isActive = (predictedData.pattern >> bitIndex) & 1;
+                            return <div key={i} className={`aspect-square rounded-md ${isActive ? 'bg-violet-500 shadow-[0_0_12px_rgba(139,92,246,0.5)]' : 'bg-black/5 dark:bg-white/5'}`} />;
+                          })}
+                        </div>
+                        <div className="h-24 w-24 rounded-xl border-4 border-white dark:border-zinc-800 shadow-xl overflow-hidden" style={{ backgroundColor: `hsl(${predictedData.h * 360 / 4095}, ${65 - (predictedData.s * 20 / 255)}%, ${75 - (predictedData.l * 20 / 255)}%)` }}>
+                          <div className="w-full h-full opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]" />
+                        </div>
+                      </div>
+                    </motion.div>
+                  ) : (
+                    <div className="h-48 flex flex-col items-center justify-center text-center space-y-4 border-2 border-dashed border-black/5 dark:border-white/5 rounded-xl">
+                      <div className="p-4 rounded-2xl bg-slate-50 dark:bg-white/5"><Hash className="text-slate-300 dark:text-white/10" size={36} /></div>
+                      <p className="text-xs font-bold text-slate-400 dark:text-white/30 uppercase tracking-widest">Input ID to generate matrix</p>
+                    </div>
+                  )}
+                </AnimatePresence>
               </div>
-            )}
-            <div className="min-h-[400px] rounded-3xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-white/5 p-2 backdrop-blur-md">
-              <AnimatePresence mode="popLayout">
-                {scanning ? (
-                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex h-full flex-col items-center justify-center space-y-6 py-20">
-                    <div className="relative"><div className="h-24 w-24 rounded-full border-t-2 border-cyan-500 animate-spin" /><Search className="absolute inset-0 m-auto text-cyan-500" size={32} /></div>
-                    <div className="text-center"><p className="text-lg font-medium text-slate-900 dark:text-white">Scanning {maxId.toLocaleString()} IDs</p><p className="text-sm text-slate-500 dark:text-white/40">Multi-core WASM acceleration</p></div>
-                    <div className="w-64 h-1.5 bg-black/5 dark:bg-white/5 rounded-full overflow-hidden"><motion.div className="h-full bg-cyan-500" initial={{ width: 0 }} animate={{ width: `${progress}%` }} /></div>
-                  </motion.div>
-                ) : users.length > 0 ? (
-                  <div className="space-y-4 p-4">
-                    <div className="space-y-4">{users.map((user) => <UserCard key={user.id} user={user} type="default" />)}</div>
-                  </div>
-                ) : <div className="flex h-full flex-col items-center justify-center py-40 text-center space-y-4"><p className="text-slate-400 dark:text-white/40">{!image ? "Upload an image to start searching" : "No matches found yet."}</p></div>}
-              </AnimatePresence>
             </div>
           </section>
         </div>
+
+        {/* Bottom Section: Results */}
+        <section className="space-y-6">
+          <div className="flex items-center justify-between border-b-2 border-black/5 dark:border-white/10 pb-4">
+            <h2 className="flex items-center gap-3 text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+              <Users className="text-cyan-500" size={24} /> FOUND MATCHES
+              {users.length > 0 && <span className="ml-2 text-xs font-extrabold px-3 py-1 rounded-full bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 uppercase tracking-wide">{users.length}</span>}
+            </h2>
+            {scanning && (
+              <div className="flex items-center gap-4">
+                <span className="text-base font-extrabold text-cyan-500 tabular-nums">{progress}%</span>
+                <div className="w-40 h-2 bg-black/5 dark:bg-white/5 rounded-full overflow-hidden shadow-inner">
+                  <motion.div className="h-full bg-cyan-500 shadow-[0_0_10px_rgba(6,182,212,0.5)]" initial={{ width: 0 }} animate={{ width: `${progress}%` }} />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <AnimatePresence mode="wait">
+            {scanning ? (
+              <div className="flex flex-col items-center justify-center py-24 space-y-6">
+                <div className="relative">
+                  <div className="h-16 w-16 rounded-full border-4 border-cyan-500/10 border-t-cyan-500 animate-spin" />
+                  <div className="absolute inset-0 flex items-center justify-center"><Search className="text-cyan-500 animate-pulse" size={24} /></div>
+                </div>
+                <div className="text-center space-y-1">
+                  <h3 className="text-xl font-extrabold text-slate-900 dark:text-white uppercase tracking-wide">Cracking the code</h3>
+                  <p className="text-slate-500 dark:text-white/40 font-semibold uppercase tracking-[0.3em] text-[10px]">Testing {maxId.toLocaleString()} candidates</p>
+                </div>
+              </div>
+            ) : users.length > 0 ? (
+              <div className="space-y-8">
+                <div className="flex flex-col gap-4">
+                  {currentDefaultUsers.map((user) => <UserCard key={user.id} user={user} type="default" />)}
+                </div>
+                
+                {totalPages > 1 && (
+                  <div className="flex justify-center items-center gap-4">
+                    <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="p-3 rounded-xl border-2 border-black/5 dark:border-white/5 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-20 transition-all shadow-lg active:scale-90">
+                      <ChevronLeft size={18} />
+                    </button>
+                    <span className="text-sm font-black tabular-nums">Page {currentPage} / {totalPages}</span>
+                    <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} className="p-3 rounded-xl border-2 border-black/5 dark:border-white/5 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-20 transition-all shadow-lg active:scale-90">
+                      <ChevronRight size={18} />
+                    </button>
+                  </div>
+                )}
+
+                {categorizedUsers.nonDefaultUsers.length > 0 && (
+                  <div className="pt-6">
+                    <button onClick={() => setShowNonDefault(!showNonDefault)} className="flex items-center justify-between w-full p-4 rounded-xl border-2 border-black/5 dark:border-white/5 bg-black/[0.03] dark:bg-white/[0.03] hover:bg-black/[0.05] dark:hover:bg-white/[0.05] transition-all group">
+                      <span className="text-xs font-black uppercase tracking-[0.3em] flex items-center gap-3">
+                        <div className="p-2 rounded-xl bg-violet-500/10 text-violet-500"><Users size={16} /></div>
+                        Custom Avatar Matches ({categorizedUsers.nonDefaultUsers.length})
+                      </span>
+                      <div className="p-2 rounded-xl bg-black/5 dark:bg-white/5 group-hover:bg-black/10 transition-colors">
+                        {showNonDefault ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                      </div>
+                    </button>
+                    <AnimatePresence>
+                      {showNonDefault && (
+                        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+                          <div className="flex flex-col gap-4 pt-6">
+                            {categorizedUsers.nonDefaultUsers.map((user) => <UserCard key={user.id} user={user} type="custom" />)}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="py-24 text-center space-y-4">
+                <div className="mx-auto w-24 h-24 rounded-xl bg-slate-50 dark:bg-white/5 flex items-center justify-center"><Search className="text-slate-200 dark:text-white/10" size={48} /></div>
+                <p className="text-xs font-black text-slate-300 dark:text-white/20 uppercase tracking-[0.5em]">No data matching your query</p>
+              </div>
+            )}
+          </AnimatePresence>
+        </section>
       </div>
       <canvas ref={canvasRef} className="hidden" />
     </main>

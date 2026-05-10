@@ -6,6 +6,7 @@
 .DS_Store
 *.local
 .env*
+.idea/
 
 # Rust / WASM
 /wasm-bruteforcer/target
