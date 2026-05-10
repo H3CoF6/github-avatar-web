@@ -59,7 +59,7 @@ export function UserCard({ user, type }: { user: GitHubUser, type: 'default' | '
 
       <div className="mt-4 pt-4 border-t border-black/5 dark:border-white/5">
         <img 
-          src={`https://github-readme-stats.vercel.app/api?username=${user.login}&show_icons=true&theme=transparent&title_color=${type === 'default' ? '0891b2' : '4f46e5'}&text_color=888&icon_color=888&bg_color=00000000&hide_border=true`}
+          src={`https://github-stats-h3cof6.vercel.app/api?username=${user.login}&show_icons=true&theme=transparent&title_color=${type === 'default' ? '0891b2' : '4f46e5'}&text_color=888&icon_color=888&bg_color=00000000&hide_border=true`}
           alt="GitHub Stats"
           className="w-full dark:invert-[0.1] dark:brightness-150"
         />

@@ -1,13 +1,13 @@
 /* tslint:disable */
 /* eslint-disable */
 
-export function find_matches(target_pattern: number, target_h: number, target_s: number, target_l: number, start_id: number, end_id: number): Uint32Array;
+export function find_matches(target_pattern: number, start_id: number, end_id: number): Uint32Array;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly find_matches: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
+    readonly find_matches: (a: number, b: number, c: number) => [number, number];
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_start: () => void;

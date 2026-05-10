@@ -2,15 +2,12 @@
 
 /**
  * @param {number} target_pattern
- * @param {number} target_h
- * @param {number} target_s
- * @param {number} target_l
  * @param {number} start_id
  * @param {number} end_id
  * @returns {Uint32Array}
  */
-export function find_matches(target_pattern, target_h, target_s, target_l, start_id, end_id) {
-    const ret = wasm.find_matches(target_pattern, target_h, target_s, target_l, start_id, end_id);
+export function find_matches(target_pattern, start_id, end_id) {
+    const ret = wasm.find_matches(target_pattern, start_id, end_id);
     var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
     wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
     return v1;

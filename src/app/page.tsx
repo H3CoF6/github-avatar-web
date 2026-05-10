@@ -6,6 +6,7 @@ import { Upload, Search, Users, Shield, Cpu, RefreshCcw, LayoutGrid, Sun, Moon }
 import { UserCard } from '@/components/UserCard';
 import { findBestHslMatch, IdenticonData } from '@/lib/utils/image';
 import confetti from 'canvas-confetti';
+import CryptoJS from 'crypto-js';
 
 const MAX_ID_FALLBACK = 210000000;
 
@@ -192,9 +193,6 @@ export default function Home() {
 
       worker.postMessage({
         targetPattern: targetData.pattern,
-        targetH: targetData.h,
-        targetS: targetData.s,
-        targetL: targetData.l,
         startId: i * chunkSize,
         endId: Math.min((i + 1) * chunkSize, maxId),
         wasmUrl: '/wasm/wasm_bruteforcer_bg.wasm'
@@ -203,12 +201,41 @@ export default function Home() {
   };
 
   const finalizeScan = async (foundIds: number[]) => {
+    if (!targetData) return;
     setScanning(false);
-    setMatches(foundIds);
+    
     workersRef.current.forEach(w => w.terminate());
     workersRef.current = [];
 
-    if (foundIds.length > 0) {
+    if (foundIds.length === 0) return;
+
+    // 1. Calculate color distance for all matches and sort
+    const rankedIds = foundIds.map(id => {
+      const hash = CryptoJS.MD5(id.toString()).toString();
+      const bytes = Buffer.from(hash, 'hex');
+      
+      const h1 = (bytes[12] & 0x0f) << 8;
+      const h2 = bytes[13];
+      const h = h1 | h2;
+      const s = bytes[14];
+      const l = bytes[15];
+
+      // Euclidean distance in normalized 3D space (approximate)
+      const dh = Math.abs(h - targetData.h) / 4096;
+      const ds = Math.abs(s - targetData.s) / 256;
+      const dl = Math.abs(l - targetData.l) / 256;
+      const distance = Math.sqrt(dh*dh + ds*ds + dl*dl);
+
+      return { id, distance };
+    })
+    .filter(item => item.distance < 0.3) // Tolerance: distance < 0.3 (approx 30% dev)
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, 20); // Limit to top 20 for API performance
+
+    const sortedIds = rankedIds.map(item => item.id);
+    setMatches(sortedIds);
+
+    if (sortedIds.length > 0) {
       confetti({
         particleCount: 150,
         spread: 70,
@@ -218,7 +245,7 @@ export default function Home() {
 
       // Fetch user data
       const userData = await Promise.all(
-        foundIds.map(async (id) => {
+        sortedIds.map(async (id) => {
           const res = await fetch(`https://api.github.com/user/${id}`);
           return res.ok ? res.json() : null;
         })
