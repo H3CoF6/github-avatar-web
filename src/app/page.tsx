@@ -195,10 +195,13 @@ export default function Home() {
     workersRef.current.forEach(w => w.terminate());
     workersRef.current = [];
     if (foundIds.length === 0) { console.warn("[Scan] No shape matches found."); return; }
+    
     const rankedIds = foundIds.map(id => {
       const hash = CryptoJS.MD5(id.toString()).toString();
-      const bytes = [];
-      for (let c = 0; c < hash.length; c += 2) bytes.push(parseInt(hash.substr(c, 2), 16));
+      const bytes = new Uint8Array(16);
+      for (let i = 0; i < 16; i++) {
+        bytes[i] = parseInt(hash.slice(i * 2, i * 2 + 2), 16);
+      }
       const h1 = (bytes[12] & 0x0f) << 8;
       const h2 = bytes[13];
       const h = h1 | h2;
@@ -210,10 +213,14 @@ export default function Home() {
       const distance = Math.sqrt(dh*dh + ds*ds + dl*dl);
       return { id, distance, h, s, l };
     });
-    console.log("[Scan] Top matches:", rankedIds.sort((a,b) => a.distance - b.distance).slice(0, 5));
-    const filtered = rankedIds.filter(item => item.distance < 0.5).sort((a, b) => a.distance - b.distance);
+    
+    const sorted = [...rankedIds].sort((a,b) => a.distance - b.distance);
+    console.log("[Scan] Top 5 closest matches:", sorted.slice(0, 5));
+    
+    const filtered = sorted.filter(item => item.distance < 0.5);
     const sortedIds = filtered.map(item => item.id).slice(0, 50);
     setMatches(sortedIds);
+    
     if (sortedIds.length > 0) {
       confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: ['#00f2ff', '#7000ff', '#ffffff'] });
       const userData = await Promise.all(sortedIds.map(async (id) => {

@@ -1,5 +1,5 @@
 use wasm_bindgen::prelude::*;
-use md5::{Md5, Digest};
+use md5;
 
 #[wasm_bindgen]
 pub fn find_matches(
@@ -8,14 +8,19 @@ pub fn find_matches(
     end_id: u32,
 ) -> Vec<u32> {
     let mut matches = Vec::new();
-    let mut hasher = Md5::new();
+    
+    // Pre-allocate a buffer for integer to string conversion
+    // Max u32 is 4294967295 (10 digits)
+    let mut buf = [0u8; 11];
     
     for id in start_id..=end_id {
-        let id_str = id.to_string();
-        hasher.update(id_str.as_bytes());
-        let result = hasher.finalize_reset();
+        // Fast integer to string without allocation
+        let len = write_u32(&mut buf, id);
+        let id_bytes = &buf[..len];
         
-        // 1. Check pattern (first 15 nibbles)
+        // Use the simplest compute API to avoid any state issues
+        let result = md5::compute(id_bytes);
+        
         let mut pattern: u32 = 0;
         for i in 0..15 {
             let byte_idx = i / 2;
@@ -37,4 +42,26 @@ pub fn find_matches(
     }
     
     matches
+}
+
+// Helper to convert u32 to bytes without std::fmt or String
+fn write_u32(buf: &mut [u8; 11], mut n: u32) -> usize {
+    if n == 0 {
+        buf[0] = b'0';
+        return 1;
+    }
+    let mut i = 0;
+    let mut temp_buf = [0u8; 10];
+    let mut j = 0;
+    while n > 0 {
+        temp_buf[j] = b'0' + (n % 10) as u8;
+        n /= 10;
+        j += 1;
+    }
+    while j > 0 {
+        j -= 1;
+        buf[i] = temp_buf[j];
+        i += 1;
+    }
+    i
 }
