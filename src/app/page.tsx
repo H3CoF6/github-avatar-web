@@ -38,10 +38,19 @@ export default function Home() {
     const root = window.document.documentElement;
     if (theme === 'dark') {
       root.classList.add('dark');
+      root.style.colorScheme = 'dark';
     } else {
       root.classList.remove('dark');
+      root.style.colorScheme = 'light';
     }
   }, [theme]);
+
+  // Try to detect theme from system on first load
+  useEffect(() => {
+    if (window.matchMedia('(prefers-color-scheme: light)').matches) {
+      setTheme('light');
+    }
+  }, []);
 
   // 1. Fetch Max ID
   useEffect(() => {
@@ -322,19 +331,50 @@ export default function Home() {
                     const row = Math.floor(i / 5);
                     const col = i % 5;
                     const displayCol = col > 2 ? 4 - col : col;
+                    // Bit index matches WASM: col 2 (row 0-4) bits 0-4, col 1 (row 0-4) bits 5-9, col 0 (row 0-4) bits 10-14
                     const bitIndex = (2 - displayCol) * 5 + row;
                     const isActive = (targetData.pattern >> bitIndex) & 1;
-                    
+
                     return (
                       <div 
                         key={i}
-                        className={`rounded-sm transition-colors duration-500 ${
-                          isActive ? 'bg-cyan-500' : 'bg-slate-100 dark:bg-white/5'
+                        onClick={() => {
+                          const newPattern = targetData.pattern ^ (1 << bitIndex);
+                          setTargetData({ ...targetData, pattern: newPattern });
+                        }}
+                        className={`rounded-sm cursor-pointer transition-colors duration-200 ${
+                          isActive ? 'bg-cyan-500 hover:bg-cyan-400' : 'bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10'
                         }`}
                       />
                     );
                   })}
                 </div>
+
+                <div className="mt-6 space-y-4">
+                  <div className="flex items-center justify-between text-xs text-slate-500 dark:text-white/40">
+                    <span>Hue: {targetData.h}</span>
+                    <span>Sat: {targetData.s}</span>
+                    <span>Lum: {targetData.l}</span>
+                  </div>
+                  <div className="space-y-2">
+                    <input 
+                      type="range" min="0" max="4095" value={targetData.h} 
+                      onChange={(e) => setTargetData({...targetData, h: parseInt(e.target.value)})}
+                      className="w-full h-1 bg-slate-200 dark:bg-white/10 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                    />
+                    <input 
+                      type="range" min="0" max="255" value={targetData.s} 
+                      onChange={(e) => setTargetData({...targetData, s: parseInt(e.target.value)})}
+                      className="w-full h-1 bg-slate-200 dark:bg-white/10 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                    />
+                    <input 
+                      type="range" min="0" max="255" value={targetData.l} 
+                      onChange={(e) => setTargetData({...targetData, l: parseInt(e.target.value)})}
+                      className="w-full h-1 bg-slate-200 dark:bg-white/10 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                    />
+                  </div>
+                </div>
+
 
                 <button
                   disabled={scanning}

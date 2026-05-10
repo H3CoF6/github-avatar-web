@@ -3,7 +3,7 @@ use md5::{Md5, Digest};
 
 #[wasm_bindgen]
 pub fn find_matches(
-    target_pattern: u32, // 15 bits
+    target_pattern: u32, // 15 bits, bit 0 is nibble 0 (col 2, row 0), etc.
     target_h: u32,       // 12 bits
     target_s: u32,       // 8 bits
     target_l: u32,       // 8 bits
@@ -19,23 +19,22 @@ pub fn find_matches(
         let result = hasher.finalize_reset();
         
         // 1. Check pattern (first 15 nibbles)
-        // Each nibble % 2 == 0 is 'on'
         let mut pattern: u32 = 0;
-        for i in 0..8 {
-            let byte = result[i];
+        let mut bit = 0;
+        
+        // The reference implementation uses a Nibbler which yields ByteN_HI then ByteN_LO.
+        // It iterates col 2 (row 0-4), then col 1 (row 0-4), then col 0 (row 0-4).
+        for i in 0..15 {
+            let byte_idx = i / 2;
+            let byte = result[byte_idx];
+            let nibble = if i % 2 == 0 {
+                (byte >> 4) & 0x0f // HI
+            } else {
+                byte & 0x0f // LO
+            };
             
-            // High nibble
-            let hi = (byte >> 4) & 0x0f;
-            if hi % 2 == 0 {
-                pattern |= 1 << (i * 2);
-            }
-            
-            if i * 2 + 1 < 15 {
-                // Low nibble
-                let lo = byte & 0x0f;
-                if lo % 2 == 0 {
-                    pattern |= 1 << (i * 2 + 1);
-                }
+            if nibble % 2 == 0 {
+                pattern |= 1 << i;
             }
         }
         
