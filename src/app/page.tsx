@@ -8,7 +8,7 @@ import { findBestHslMatch, IdenticonData } from '@/lib/utils/image';
 import confetti from 'canvas-confetti';
 import CryptoJS from 'crypto-js';
 
-const MAX_ID_FALLBACK = 210000000;
+const MAX_ID_FALLBACK = 300000000;
 
 interface GitHubUser {
   login: string;
@@ -91,7 +91,7 @@ export default function Home() {
     fetch('https://api.github.com/users?per_page=1&order=desc')
       .then(res => res.headers.get('link'))
       .then(() => {
-        fetch('https://api.github.com/users?since=210000000')
+        fetch('https://api.github.com/users?since=300000000')
           .then(res => res.json())
           .then(data => {
             if (Array.isArray(data) && data.length > 0) {
